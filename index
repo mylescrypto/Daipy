@@ -1,0 +1,99 @@
+import { useState } from "react";
+import { ethers } from "ethers";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent } from "@/components/ui/card";
+
+const CONTRACT_ADDRESS = "0x5760ef15e24a749e3af0a9b91af026d2194c716f";
+const ABI = [
+  "function invest(address referrer, uint256 amount) public",
+  "function withdraw() public",
+  "function getUserInfo(address user) view returns (uint256 deposited, uint256 rewards, uint256 withdrawn, address referrer)",
+];
+
+export default function DaipyApp() {
+  const [amount, setAmount] = useState("");
+  const [referrer, setReferrer] = useState("");
+  const [walletAddress, setWalletAddress] = useState("");
+  const [userInfo, setUserInfo] = useState(null);
+
+  const connectWallet = async () => {
+    if (!window.ethereum) return alert("Install MetaMask");
+    const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+    setWalletAddress(accounts[0]);
+  };
+
+  const invest = async () => {
+    if (!window.ethereum || !amount) return;
+    const provider = new ethers.providers.Web3Provider(window.ethereum);
+    const signer = provider.getSigner();
+    const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+
+    const usdtAddress = "0x55d398326f99059fF775485246999027B3197955";
+    const usdt = new ethers.Contract(usdtAddress, [
+      "function approve(address spender, uint amount) public returns (bool)"
+    ], signer);
+
+    const parsedAmount = ethers.utils.parseUnits(amount, 18);
+
+    await usdt.approve(CONTRACT_ADDRESS, parsedAmount);
+    const tx = await contract.invest(referrer || ethers.constants.AddressZero, parsedAmount);
+    await tx.wait();
+    alert("Investment successful");
+  };
+
+  const withdraw = async () => {
+    if (!window.ethereum) return;
+    const provider = new ethers.providers.Web3Provider(window.ethereum);
+    const signer = provider.getSigner();
+    const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+
+    const tx = await contract.withdraw();
+    await tx.wait();
+    alert("Withdrawal complete");
+  };
+
+  const fetchUserInfo = async () => {
+    if (!window.ethereum || !walletAddress) return;
+    const provider = new ethers.providers.Web3Provider(window.ethereum);
+    const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, provider);
+
+    const data = await contract.getUserInfo(walletAddress);
+    setUserInfo({
+      deposited: ethers.utils.formatUnits(data[0], 18),
+      rewards: ethers.utils.formatUnits(data[1], 18),
+      withdrawn: ethers.utils.formatUnits(data[2], 18),
+      referrer: data[3],
+    });
+  };
+
+  return (
+    <div className="max-w-xl mx-auto py-10 space-y-6">
+      <Card>
+        <CardContent className="space-y-4">
+          <Button onClick={connectWallet} className="w-full">
+            {walletAddress ? `Connected: ${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : "Connect Wallet"}
+          </Button>
+          <Input type="text" placeholder="USDT Amount" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          <Input type="text" placeholder="Referrer Address (optional)" value={referrer} onChange={(e) => setReferrer(e.target.value)} />
+          <Button onClick={invest} className="w-full">Invest</Button>
+          <Button onClick={withdraw} className="w-full" variant="secondary">Withdraw</Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="space-y-3">
+          <Button onClick={fetchUserInfo}>Get My Info</Button>
+          {userInfo && (
+            <div className="text-sm space-y-1">
+              <div>Deposited: {userInfo.deposited} USDT</div>
+              <div>Rewards: {userInfo.rewards} USDT</div>
+              <div>Withdrawn: {userInfo.withdrawn} USDT</div>
+              <div>Referrer: {userInfo.referrer}</div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
